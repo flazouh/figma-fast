@@ -1,29 +1,10 @@
 // The multi-client holder: many clients on one socket, each reply back to the client that asked, with its own id.
 import { assert, describe, it } from "@effect/vitest"
 import { Duration, Effect, Queue } from "effect"
-import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import { createConnection, type Socket } from "node:net"
 import { join } from "node:path"
-import { tempQueue } from "./helpers.ts"
-
-const root = join(import.meta.dirname, "..")
-
-/** Starts holder.py on a fake app and resolves once it listens. */
-const startHolder = (socket: string) =>
-  Effect.acquireRelease(
-    Effect.callback<ReturnType<typeof spawn>>((resume) => {
-      const child = spawn("python3", [join(root, "holder", "holder.py")], {
-        env: { ...process.env, FIGMA_HOLDER_APP: join(root, "test", "fixtures", "fake_figma_app.py"), FIGMACLI_DESKTOP_SOCKET: socket },
-        stdio: ["ignore", "pipe", "inherit"],
-      })
-      child.stdout?.setEncoding("utf8").on("data", (chunk: string) => {
-        if (chunk.includes("listening")) resume(Effect.succeed(child))
-      })
-      child.once("exit", (code) => resume(Effect.die(new Error(`holder.py ended with ${code} before it listened`))))
-    }),
-    (child) => Effect.sync(() => child.kill("SIGKILL")),
-  )
+import { startHolder, tempQueue } from "./helpers.ts"
 
 interface Client {
   readonly send: (message: object) => Effect.Effect<void>

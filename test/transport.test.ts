@@ -6,8 +6,8 @@ import { createServer } from "node:net"
 import { join } from "node:path"
 import { FigmaConfig } from "../src/config.ts"
 import { type FileKey, NoDesktopTab, RunFailed, TransportUnavailable } from "../src/domain.ts"
-import { desktopHealthy, makeEgo, readOnly, Transports, TransportsLive } from "../src/transport.ts"
-import { buildClient, scriptedTransport, tempQueue, testSettings } from "./helpers.ts"
+import { desktopHealthy, makeDesktop, makeEgo, readOnly, Transports, TransportsLive } from "../src/transport.ts"
+import { buildClient, scriptedTransport, startHolder, tempQueue, testSettings } from "./helpers.ts"
 
 const KEY = "FALLBACK0001" as FileKey
 
@@ -92,7 +92,7 @@ describe("transport order and fallback", () => {
       const ego = makeEgo(testSettings({ queueDir: settings.queueDir, egoBrowser: ["/nonexistent/ego-browser"] }), readOnly)
       const { client } = yield* buildClient(settings, [ego])
       const error = yield* Effect.flip(client.call({ op: "pages", key: KEY }))
-      assert.strictEqual(error._tag, "TransportUnavailable")
+      assert.strictEqual(error._tag, "TransportUnavailable", error.message)
       assert.match(error.message, /not installed/)
     }))
 
@@ -117,4 +117,25 @@ printf 'FIGMACLI_JSON:{"args":"%s","space":"%s","script":%s}\\n' "$args" "$space
       assert.strictEqual(answer.space, "figmacli-FALLBACK0001")
       assert.isAtLeast(answer.script, 1)
     }).pipe(Effect.timeout(Duration.seconds(10))))
+
+  it.live("through the real holder and shim: no app tab holds the file, so the run moves to ego", () =>
+    Effect.gen(function* () {
+      const queueDir = tempQueue()
+      const socket = join(queueDir, "cdp.sock")
+      yield* startHolder(socket)
+      const settings = testSettings({ queueDir, desktopSocket: socket })
+      const desktop = makeDesktop(settings)
+      const direct = yield* Effect.flip(desktop.run({ op: "pages", key: KEY }, Duration.seconds(10)))
+      assert.strictEqual(direct._tag, "NoDesktopTab")
+      const ego = yield* scriptedTransport({ name: "ego", opensTabs: true, gated: false })
+      const { client } = yield* buildClient(settings, [desktop, ego.transport])
+      assert.strictEqual(((yield* client.call({ op: "pages", key: KEY })) as { via: string }).via, "ego")
+    }).pipe(Effect.timeout(Duration.seconds(15))))
+
+  it.live("the desktop transport says the holder is gone when nothing listens", () =>
+    Effect.gen(function* () {
+      const queueDir = tempQueue()
+      const error = yield* Effect.flip(makeDesktop(testSettings({ queueDir })).run({ op: "pages", key: KEY }, Duration.seconds(10)))
+      assert.strictEqual(error._tag, "TransportUnavailable", error.message)
+    }))
 })

@@ -8,7 +8,9 @@
 // holder answers a CDP call, and ego after it. The client moves to the next one only on an error that proves
 // nothing ran in a page: TransportUnavailable or NoDesktopTab.
 import { Context, Duration, Effect, Layer } from "effect"
+import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { createConnection } from "node:net"
+import { join } from "node:path"
 import script from "../assets/figma.mjs" with { type: "text" }
 import shim from "../assets/shim.mjs" with { type: "text" }
 import { FigmaConfig, type Settings } from "./config.ts"
@@ -60,6 +62,19 @@ export const desktopHealthy = (socket: string, limit: Duration.Duration = Durati
     })
   })
 
+/** Writes the run's module to a private file, removed when the scope closes. */
+const scriptFile = (queueDir: string, source: string) =>
+  Effect.acquireRelease(
+    Effect.sync(() => {
+      const dir = join(queueDir, "run")
+      mkdirSync(dir, { recursive: true, mode: 0o700 })
+      const path = join(dir, `${process.pid}-${Math.random().toString(16).slice(2, 10)}.mjs`)
+      writeFileSync(path, source, { mode: 0o600 })
+      return path
+    }),
+    (path) => Effect.sync(() => rmSync(path, { force: true })),
+  )
+
 export const makeDesktop = (config: Settings): TransportShape => ({
   name: "desktop",
   opensTabs: false,
@@ -68,7 +83,10 @@ export const makeDesktop = (config: Settings): TransportShape => ({
       const source =
         `const INPUT = ${JSON.stringify(request)};\nconst SOCKET = ${JSON.stringify(config.desktopSocket)};\n` +
         `const CALL_LIMIT = ${120_000};\n${shim}\n${script}\nawait endDesktop();\nprocess.exit(0);\n`
-      const result = yield* runProcess([config.node, "--input-type=module", "-"], source, timeout)
+      // A file, not stdin: Bun's node shim, which `bun --bun` puts first on PATH, cannot read a module from stdin.
+      const result = yield* Effect.scoped(
+        Effect.flatMap(scriptFile(config.queueDir, source), (path) => runProcess([config.node, path], "", timeout)),
+      )
       if (result.missing) {
         return yield* new TransportUnavailable({ transport: "desktop", reason: `${config.node} is not installed, and the desktop transport runs the page script in it` })
       }

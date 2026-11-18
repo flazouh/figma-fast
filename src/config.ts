@@ -28,6 +28,8 @@ export interface Settings {
   readonly egoServerName: string
   /** FIGMACLI_NODE (new): the node binary the desktop transport runs the page script in. */
   readonly node: string
+  /** FIGMACLI_REAPER (new): "off" starts no idle reaper after a run, for CI and tests. */
+  readonly reaper: boolean
 }
 
 export class FigmaConfig extends Context.Service<FigmaConfig, Settings>()("figma-fast/FigmaConfig") {}
@@ -76,6 +78,7 @@ export const settingsConfig: Config.Config<Settings> = Config.all({
   ),
   egoServerName: Config.String("FIGMACLI_EGO_SERVER_NAME").pipe(Config.withDefault("")),
   node: Config.String("FIGMACLI_NODE").pipe(Config.withDefault("node")),
+  reaper: Config.String("FIGMACLI_REAPER").pipe(Config.withDefault("on"), Config.map((raw) => raw.trim().toLowerCase() !== "off")),
 })
 
 /** The settings from the environment. */
@@ -95,5 +98,6 @@ export const testSettings = (overrides: Partial<Settings> & Pick<Settings, "queu
   egoBrowser: ["ego-browser"],
   egoServerName: "",
   node: "node",
+  reaper: false,
   ...overrides,
 })

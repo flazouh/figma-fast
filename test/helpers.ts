@@ -1,5 +1,6 @@
 // A client stack on a temporary queue folder, with a scripted transport in place of Figma.
 import { Context, Deferred, Effect, Layer, Queue } from "effect"
+import { spawn } from "node:child_process"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -77,3 +78,22 @@ export const waitSignals = Effect.gen(function* () {
 })
 
 export { testSettings }
+
+const root = join(import.meta.dirname, "..")
+
+/** Starts holder.py on a fake app and resolves once it listens. */
+export const startHolder = (socket: string) =>
+  Effect.acquireRelease(
+    Effect.callback<ReturnType<typeof spawn>>((resume) => {
+      const child = spawn("python3", [join(root, "holder", "holder.py")], {
+        env: { ...process.env, FIGMA_HOLDER_APP: join(root, "test", "fixtures", "fake_figma_app.py"), FIGMACLI_DESKTOP_SOCKET: socket },
+        stdio: ["ignore", "pipe", "inherit"],
+      })
+      child.stdout?.setEncoding("utf8").on("data", (chunk: string) => {
+        if (chunk.includes("listening")) resume(Effect.succeed(child))
+      })
+      child.once("exit", (code) => resume(Effect.die(new Error(`holder.py ended with ${code} before it listened`))))
+    }),
+    (child) => Effect.sync(() => child.kill("SIGKILL")),
+  )
+
