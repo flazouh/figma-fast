@@ -1,0 +1,28 @@
+{
+  "name": "figma-fast",
+  "version": "0.2.0",
+  "private": true,
+  "description": "figmacli rebuilt: per-file locks, one Ego Space per file, CDP desktop transport first",
+  "type": "module",
+  "bin": { "figma-fast": "./src/main.ts" },
+  "scripts": {
+    "start": "bun src/main.ts",
+    "typecheck": "tsc --noEmit -p .",
+    "test": "bun --bun vitest run --pool=threads",
+    "test:repeat": "for i in $(seq 1 20); do bun --bun vitest run --pool=threads --silent || exit 1; done",
+    "build": "bun build src/main.ts --compile --minify --target=bun-darwin-arm64 --outfile dist/figma-fast-darwin-arm64",
+    "build:local": "bun build src/main.ts --compile --minify --outfile dist/figma-fast"
+  },
+  "engines": { "bun": ">=1.4", "node": ">=22.18" },
+  "dependencies": {
+    "@effect/platform-node": "4.1.4",
+    "effect": "4.1.4"
+  },
+  "devDependencies": {
+    "@effect/vitest": "4.1.4",
+    "@types/bun": "^1.4.4",
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1"
+  }
+}
