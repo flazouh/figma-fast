@@ -8,6 +8,7 @@
 // leave the page, so a token never reaches the terminal.
 const MARKER = "FIGMACLI_JSON:";
 const ORIGIN = "https://www.figma.com";
+// figma-fast passes figmacli-<file key>: one Space per file.
 const SPACE = INPUT.space || "figmacli";
 const OPEN_TIMEOUT = 180000;
 // A second tab proves the save: it loads what Figma holds, while the tab that
@@ -32,14 +33,15 @@ async function space() {
   return await claimTaskSpace(found.id);
 }
 
-// One Figma tab for every session: the space keeps its first page and closes any other.
+// One Figma tab for each file: the file's space keeps its first page. Only a run that holds the file alone closes
+// the others, as a read that runs beside it may be using one.
 async function firstPage(task) {
   const pages = await task.pages();
-  for (const extra of pages.slice(1)) await extra.close();
+  if (INPUT.exclusive !== false) for (const extra of pages.slice(1)) await extra.close();
   return pages.length > 0 ? pages[0] : await task.newPage();
 }
 
-// closeSpace ends the shared space and its tab, when the reaper finds it idle.
+// closeSpace ends this file's space and its tab, when the reaper finds it idle.
 async function closeSpace() {
   const found = (await listTaskSpaces()).filter((s) => s.name === SPACE && s.ownership === "agent");
   for (const entry of found) await (await taskSpace(entry.id)).finish({ keep: [] });
