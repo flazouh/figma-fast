@@ -9,6 +9,7 @@ import type { Request, Ticket, TransportError } from "../src/domain.ts"
 import { LockManager, LockManagerLive, type OnWait } from "../src/locks.ts"
 import { SpacePoolLive } from "../src/spaces.ts"
 import { type TransportShape, Transports } from "../src/transport.ts"
+import { fakeAppBin, holderBin } from "./global-setup.ts"
 
 export const tempQueue = () => mkdtempSync(join(tmpdir(), "figma-fast-test-"))
 
@@ -78,20 +79,18 @@ export const waitSignals = Effect.gen(function* () {
 
 export { testSettings }
 
-const root = join(import.meta.dirname, "..")
-
-/** Starts holder.py on a fake app and resolves once it listens. */
+/** Starts the Go holder, built by the global setup, on the fake app and resolves once it listens. */
 export const startHolder = (socket: string) =>
   Effect.acquireRelease(
     Effect.callback<ReturnType<typeof spawn>>((resume) => {
-      const child = spawn("python3", [join(root, "holder", "holder.py")], {
-        env: { ...process.env, FIGMA_HOLDER_APP: join(root, "test", "fixtures", "fake_figma_app.py"), FIGMACLI_DESKTOP_SOCKET: socket },
+      const child = spawn(holderBin, [], {
+        env: { ...process.env, FIGMA_HOLDER_APP: fakeAppBin, FIGMACLI_DESKTOP_SOCKET: socket },
         stdio: ["ignore", "pipe", "inherit"],
       })
       child.stdout?.setEncoding("utf8").on("data", (chunk: string) => {
         if (chunk.includes("listening")) resume(Effect.succeed(child))
       })
-      child.once("exit", (code) => resume(Effect.die(new Error(`holder.py ended with ${code} before it listened`))))
+      child.once("exit", (code) => resume(Effect.die(new Error(`figma-fast-holder ended with ${code} before it listened`))))
     }),
     (child) => Effect.sync(() => child.kill("SIGKILL")),
   )

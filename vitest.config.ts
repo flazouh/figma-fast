@@ -11,5 +11,5 @@ export default defineConfig({
       },
     },
   ],
-  test: { include: ["test/**/*.test.ts"], pool: "threads" },
+  test: { include: ["test/**/*.test.ts"], pool: "threads", globalSetup: ["test/global-setup.ts"] },
 })

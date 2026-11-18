@@ -14,7 +14,9 @@
     "test:repeat": "for i in $(seq 1 20); do bun --bun vitest run --pool=threads --silent || exit 1; done",
     "build": "bun build src/main.ts --compile --minify --target=bun-darwin-arm64 --outfile dist/figma-fast-darwin-arm64",
     "build:local": "bun build src/main.ts --compile --minify --outfile dist/figma-fast",
-    "lint": "oxlint src test vitest.config.ts"
+    "lint": "oxlint src test vitest.config.ts",
+    "build:holder": "cd holder && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags=\"-s -w\" -o ../dist/figma-fast-holder-darwin-arm64 ./cmd/figma-fast-holder && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags=\"-s -w\" -o ../dist/figma-fast-holder-linux-amd64 ./cmd/figma-fast-holder",
+    "test:holder": "cd holder && go vet ./... && go test -race -count=20 ./..."
   },
   "engines": {
     "bun": ">=1.4",

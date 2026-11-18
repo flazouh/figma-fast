@@ -31,7 +31,7 @@ flowchart LR
   Client -->|"3. run in Space<br/>figmacli-&lt;key&gt;"| T["Transports<br/>(transport.ts)"]
   T -->|primary| Desktop["desktop: node + shim.mjs<br/>→ holder socket"]
   T -->|"fallback: holder absent,<br/>unhealthy, or no app tab"| Ego["ego: ego-browser nodejs<br/>Space per file"]
-  Desktop --> Holder["holder.py<br/>multi-client CDP relay"]
+  Desktop --> Holder["figma-fast-holder (Go)<br/>multi-client CDP relay"]
   Holder -->|"--remote-debugging-pipe"| App["Figma.app<br/>one tab per file"]
   Ego --> Lite["Ego Lite"]
 ```
@@ -84,35 +84,39 @@ Errors are tagged (`Data.TaggedError`) and set the exit code:
 | `src/commands.ts`, `src/cli.ts`, `src/main.ts` | Commands, effect/cli wiring, and the entry point |
 | `src/reaper.ts` | Closes Spaces left idle |
 | `assets/figma.mjs`, `assets/shim.mjs` | figmacli's page script and desktop shim, embedded as text |
-| `holder/holder.py` | The multi-client CDP holder |
+| `holder/` | The multi-client CDP holder: a standalone Go module, binary `figma-fast-holder` |
 
 ### The holder
 
-`holder/holder.py` replaces the single-client holder from `agent-skills/skills/comms-figma/scripts/`. The old
-holder sent replies to the newest client only, so a new connection, a health probe included, took over and
+`holder/` is a standalone Go module (`github.com/flazouh/figma-fast/holder`, standard library only) that builds
+`figma-fast-holder`. It replaces the single-client holder from `agent-skills/skills/comms-figma/scripts/`. The
+old holder sent replies to the newest client only, so a new connection, a health probe included, took over and
 silenced the run in flight. The new holder serves many clients:
 
+- **Launch:** it starts `FIGMA_HOLDER_APP` with `--remote-debugging-pipe`. Two `os.Pipe` pairs are passed through
+  `exec.Cmd.ExtraFiles`, so the app reads calls on fd 3 and writes replies and events on fd 4, NUL-ended. The
+  app gets only `HOME`, `USER`, `LOGNAME`, `PATH`, `TMPDIR`, `LANG` and `SHELL` from the environment.
+- **Socket:** it listens on `FIGMACLI_DESKTOP_SOCKET` (mode 0600), one JSON CDP message a line.
 - **Ids:** each call's id is rewritten to one of the holder's own (kept under 2^31, which is all Chromium
-  reads). The reply goes back to the client that sent the call, with that client's id restored.
+  reads). The reply goes back to the client that sent the call, with that client's id restored as it was sent.
 - **Sessions:** a session made by `Target.attachToTarget` belongs to the client that asked. Events on that
   session go to that client only. Events with no session go to every client.
-- **Leaving:** when a client disconnects, the holder detaches that client's sessions.
+- **Leaving:** when a client disconnects, the holder drops its calls in flight and detaches its sessions.
+- **Slow clients:** each client has its own writer and a queue of 4096 messages, so one stuck client cannot hold
+  up the others. A client that falls that far behind is disconnected.
+- **Lifetime:** it exits with code 1 when the app closes its pipe (the app quit). On SIGINT or SIGTERM it kills
+  the app it started and removes the socket.
 - **Tabs:** it never opens or closes a tab, so the Figma app keeps one tab per file, its user's.
 
-The holder stays in Python, standard library only, for three reasons:
-
-- The Mac already runs this pipe setup in Python: real `os.pipe` fds moved to 3 and 4 with `pass_fds`, which
-  is what `--remote-debugging-pipe` reads. Node and Bun hand a child socketpairs instead, and I could not test
-  Chromium against those here.
-- It is a long-lived daemon. As Python, it needs no Bun runtime and no 90 MB binary.
-- The change is a diff against the script already in use, so it is easy to review.
+Code: `holder/router.go` (who gets what, no I/O), `holder/holder.go` (launch, pipe pump, socket),
+`holder/cmd/figma-fast-holder` (the binary), `holder/internal/fakeapp` (a stand-in app for tests only).
 
 ## Settings
 
 | Setting | Default | |
 |---|---|---|
 | `FIGMACLI_TRANSPORT` | `auto` | `desktop`, `ego`, or `auto` (desktop first when the holder answers, ego after it). Kept |
-| `FIGMACLI_DESKTOP_SOCKET` | `~/.cache/figma-cdp/cdp.sock` | The holder's socket; `holder.py` reads it too. Kept |
+| `FIGMACLI_DESKTOP_SOCKET` | `~/.cache/figma-cdp/cdp.sock` | The holder's socket; `figma-fast-holder` reads it too. Kept |
 | `FIGMACLI_QUEUE_DIR` | `~/Library/Caches/figmacli` (macOS) | Lock files, tickets, tab slots and stamps. Kept |
 | `FIGMACLI_LOCK_WAIT` | `20m` | Go duration. How long a run waits for its file lock, then for a tab slot. Kept |
 | `EGO_BROWSER` | `ego-browser` | The ego-browser command, which may carry arguments (`ssh mac ego-browser`). Kept |
@@ -123,7 +127,7 @@ The holder stays in Python, standard library only, for three reasons:
 | `FIGMACLI_EGO_SERVER_NAME` | empty | New. Passed as `--ego-server-name=<name>` before `nodejs` |
 | `FIGMACLI_NODE` | `node` | New. The program the desktop transport runs the page script with |
 | `FIGMACLI_REAPER` | `on` | New. `off` starts no idle reaper (CI, tests) |
-| `FIGMA_HOLDER_APP` | `/Applications/Figma.app/Contents/MacOS/Figma` | New, read by `holder.py` |
+| `FIGMA_HOLDER_APP` | `/Applications/Figma.app/Contents/MacOS/Figma` | New, read by `figma-fast-holder` |
 
 ## Use
 
@@ -133,7 +137,13 @@ bun src/main.ts doctor                # run from source
 bun run build                         # dist/figma-fast-darwin-arm64
 bun run test                          # vitest on Bun, threads pool
 bun run typecheck                     # tsc 7, strict
+bun run lint                          # oxlint + Landmines
+bun run build:holder                  # dist/figma-fast-holder-darwin-arm64 and -linux-amd64
+bun run test:holder                   # go vet, then go test -race -count=20 in holder/
 ```
+
+The TypeScript tests need Go 1.24 or later on the PATH: their global setup builds the holder and the fake app
+into `dist/test/`, and the holder tests launch them.
 
 The commands are the same as figmacli's: `file`, `pages`, `read`, `write`, `tokens`, `arrange`, `label`,
 `swap`, `grid`, `check`, `export`, `eval`, `rename` and `doctor`. Single-dash flags still work (`-yes`,
@@ -143,9 +153,13 @@ The commands are the same as figmacli's: `file`, `pages`, `read`, `write`, `toke
 
 1. **Build and install.** Run `bun run build`, then copy `dist/figma-fast-darwin-arm64` to `~/.local/bin/figma-fast`.
    To keep scripts unchanged, also link it as `figmacli`.
-2. **Replace the holder.** Stop the old `holder.py`, then start `holder/holder.py` in its place. The socket path
-   and launch are the same. Do this before relying on `auto`: with the old holder, the health probe takes over
-   the single client slot and cuts off a run in flight.
+2. **Replace the holder.** Run `bun run build:holder` (or `cd holder && go build -o figma-fast-holder
+   ./cmd/figma-fast-holder` on the Mac), then copy `dist/figma-fast-holder-darwin-arm64` to
+   `~/.local/bin/figma-fast-holder`. Quit Figma, stop the old `holder.py`, and start `figma-fast-holder` in its
+   place, from whatever started the old one (a LaunchAgent or a terminal). It reads the same
+   `FIGMACLI_DESKTOP_SOCKET`, launches the app the same way, and needs no Python. Do this before relying on
+   `auto`: with the old holder, the health probe takes over the single client slot and cuts off a run in flight.
+   macOS may quarantine a copied binary; `xattr -d com.apple.quarantine ~/.local/bin/figma-fast-holder` clears it.
 3. **Running old and new side by side** is safe for tabs but not for writes:
    - Tabs: figmacli uses Space `figmacli`, and figma-fast uses `figmacli-<key>`, so the two never move each
      other's tab.
@@ -164,8 +178,9 @@ The commands are the same as figmacli's: `file`, `pages`, `read`, `write`, `toke
 - **Commands:** all 14 are ported, none left out. `tokens` compiles exactly as the Go compiler does (a test
   compares it with `test/fixtures/tokens.expected.json`, made by Go). The other commands' output and the spec
   checks were ported by reading the Go code; their tests cover a few cases each, not every message.
-- **No live run.** Nothing was run against a real Figma app, a real holder on a Mac, or Ego Lite. The
-  transports are tested with a fake app behind the real holder and a fake ego-browser.
+- **No live run.** Nothing was run against a real Figma app, the holder on a Mac, or Ego Lite. The
+  transports are tested with a fake app behind the real Go holder and a fake ego-browser. The holder's
+  `--remote-debugging-pipe` fds were tested on Linux with the fake app only.
 - **Writer fairness in one process:** the in-process `Semaphore` does not let a waiting write go before later
   reads. Across processes, the tickets do.
 - **The `--ego-server-name` position** before `nodejs` is a guess from the flag's name. Check it with
