@@ -1,5 +1,3 @@
-// The commands of figmacli 0.1.0, with its output: TOON on stdout (or -json), the same fields and the same
-// dry-run-without--yes rule. Each returns its stdout; a failure is a tagged error the CLI turns into an exit code.
 import { Duration, Effect } from "effect"
 import { readFileSync, writeFileSync } from "node:fs"
 import { execFileSync } from "node:child_process"
@@ -14,12 +12,11 @@ import {
 import { Doc, g, raw, text, value } from "./toon.ts"
 import { compileTokens } from "./tokens.ts"
 
-type Run = Effect.Effect<string, AppError, FigmaClient>
 
-const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`
+const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`
 
 /** Reads a file argument, or stdin for "-". */
-export const readInput = (path: string, stdin: () => string = () => readFileSync(0, "utf8")): string | BadInput => {
+export const readInput = (path: string, stdin: () => string = () => readFileSync(0, "utf8")) => {
   try {
     return path === "-" ? stdin() : readFileSync(path, "utf8")
   } catch (error) {
@@ -27,7 +24,7 @@ export const readInput = (path: string, stdin: () => string = () => readFileSync
   }
 }
 
-const orFail = <A>(value: A | BadInput): Effect.Effect<A, BadInput> => (value instanceof BadInput ? Effect.fail(value) : Effect.succeed(value))
+const orFail = <A>(value: A | BadInput) => (value instanceof BadInput ? Effect.fail(value) : Effect.succeed(value))
 
 const call = <A>(request: Parameters<FigmaClient["Service"]["call"]>[0], timeout?: Duration.Duration) =>
   Effect.gen(function* () {
@@ -35,7 +32,6 @@ const call = <A>(request: Parameters<FigmaClient["Service"]["call"]>[0], timeout
     return (yield* client.call(request, timeout ? { timeout } : {})) as A
   })
 
-/** A write the page did not confirm is an error, with what to run before a retry. */
 const confirmSaved = (saved: boolean, check: string) =>
   saved ? Effect.void : Effect.fail(new PageError({ detail: `the page did not confirm the save: run figmacli ${check} before you retry` }))
 
@@ -43,7 +39,7 @@ interface Page { readonly id: string; readonly name: string; readonly nodes: num
 
 const pageTable = (doc: Doc, pages: ReadonlyArray<Page>) => doc.table("pages", ["id", "name", "nodes"], pages.map((p) => [p.id, p.name, String(p.nodes)]))
 
-export const runFile = (key: FileKey, asJSON: boolean): Run =>
+export const runFile = (key: FileKey, asJSON: boolean) =>
   Effect.gen(function* () {
     const file = yield* call<{ key: string; name: string; kind: string; can_edit: boolean; url: string; pages: Array<Page> | null }>({ op: "file", key })
     if (asJSON) return json(file)
@@ -53,14 +49,14 @@ export const runFile = (key: FileKey, asJSON: boolean): Run =>
     return doc.toString()
   })
 
-export const runPages = (key: FileKey, asJSON: boolean): Run =>
+export const runPages = (key: FileKey, asJSON: boolean) =>
   Effect.gen(function* () {
     const { pages } = yield* call<{ pages: Array<Page> | null }>({ op: "pages", key })
     if (asJSON) return json(pages)
     return pageTable(new Doc(), pages ?? []).toString()
   })
 
-export const runRead = (key: FileKey, page: string, depth: number): Run =>
+export const runRead = (key: FileKey, page: string, depth: number) =>
   Effect.gen(function* () {
     if (depth < 1) return yield* new BadInput({ detail: "-depth must be 1 or more" })
     const tree = yield* call<{ page: string; nodes: Array<{ id: string; type: string; name: string; depth: number; x: number; y: number; w: number; h: number; text: string }> | null }>({ op: "read", key, page, depth })
@@ -68,7 +64,7 @@ export const runRead = (key: FileKey, page: string, depth: number): Run =>
     return new Doc().object("", text("page", tree.page)).table("nodes", ["depth", "id", "type", "name", "size", "at", "text"], rows).toString()
   })
 
-export const runWrite = (key: FileKey, specText: string, flags: { yes: boolean; replace: boolean; json: boolean }): Run =>
+export const runWrite = (key: FileKey, specText: string, flags: { yes: boolean; replace: boolean; json: boolean }) =>
   Effect.gen(function* () {
     const spec = yield* orFail(decodeSpec(WriteSpec, specText))
     const bad = checkWrite(spec)
@@ -97,7 +93,7 @@ export const runWrite = (key: FileKey, specText: string, flags: { yes: boolean; 
       .toString()
   })
 
-export const runTokens = (key: FileKey, fileText: string, yes: boolean): Run =>
+export const runTokens = (key: FileKey, fileText: string, yes: boolean) =>
   Effect.gen(function* () {
     const { push, skipped } = yield* orFail(compileTokens(fileText))
     const result = yield* call<{ created: number; changed: Array<{ name: string; from: string; to: string; bound: number; pages: string }> | null; styles: number; skipped: Array<string> | null; stale: Array<string> | null; saved: boolean }>({ op: "tokens", key, tokens: push, dry: !yes })
@@ -110,7 +106,7 @@ export const runTokens = (key: FileKey, fileText: string, yes: boolean): Run =>
       .toString()
   })
 
-export const runSwap = (key: FileKey, specText: string, flags: { yes: boolean; json: boolean }): Run =>
+export const runSwap = (key: FileKey, specText: string, flags: { yes: boolean; json: boolean }) =>
   Effect.gen(function* () {
     const swap = yield* orFail(decodeSpec(SwapSpec, specText))
     if (!swap.from || !swap.to || Object.keys(swap.map ?? {}).length === 0) return yield* new BadInput({ detail: "the spec needs from, to and map" })
@@ -119,7 +115,7 @@ export const runSwap = (key: FileKey, specText: string, flags: { yes: boolean; j
     return new Doc().object("", raw("moved", result.moved), raw("saved", result.saved)).list("missing", result.missing ?? []).toString()
   })
 
-export const runArrange = (key: FileKey, specText: string, yes: boolean): Run =>
+export const runArrange = (key: FileKey, specText: string, yes: boolean) =>
   Effect.gen(function* () {
     const arrangement = yield* orFail(decodeSpec(Arrangement, specText))
     if (!yes) {
@@ -135,7 +131,7 @@ export const runArrange = (key: FileKey, specText: string, yes: boolean): Run =>
     return pageTable(new Doc(), answer.pages ?? []).toString()
   })
 
-export const runLabel = (key: FileKey, specText: string, flags: { yes: boolean; json: boolean }): Run =>
+export const runLabel = (key: FileKey, specText: string, flags: { yes: boolean; json: boolean }) =>
   Effect.gen(function* () {
     const spec = yield* orFail(decodeSpec(LabelSpec, specText))
     const bad = checkLabel(spec)
@@ -147,7 +143,7 @@ export const runLabel = (key: FileKey, specText: string, flags: { yes: boolean; 
     return new Doc().object("", text("set", result.set), raw("variants", result.variants), raw("labels", result.labels), text("size", `${g(result.w)}x${g(result.h)}`), raw("saved", result.saved)).toString()
   })
 
-export const runGrid = (key: FileKey, specText: string, flags: { yes: boolean; json: boolean }): Run =>
+export const runGrid = (key: FileKey, specText: string, flags: { yes: boolean; json: boolean }) =>
   Effect.gen(function* () {
     const spec = yield* orFail(decodeSpec(GridSpec, specText))
     const bad = checkGrid(spec)
@@ -159,7 +155,7 @@ export const runGrid = (key: FileKey, specText: string, flags: { yes: boolean; j
     return new Doc().object("", raw("rows", result.rows), raw("columns", result.columns), raw("cells", result.cells), text("size", `${g(result.w)}x${g(result.h)}`), raw("saved", result.saved)).toString()
   })
 
-export const runCheck = (key: FileKey, page: string, shapes: string, asJSON: boolean): Run =>
+export const runCheck = (key: FileKey, page: string, shapes: string, asJSON: boolean) =>
   Effect.gen(function* () {
     const result = yield* call<{ page: string; instances: number; new: number; findings: Array<{ kind: string; id: string; name: string; path: string }> | null }>({ op: "check", key, page, shapes: shapes.split(",").map((s) => s.trim()) })
     const findings = result.findings ?? []
@@ -171,7 +167,7 @@ export const runCheck = (key: FileKey, page: string, shapes: string, asJSON: boo
     return report
   })
 
-export const runExport = (key: FileKey, node: string, out: string, scale: number): Run =>
+export const runExport = (key: FileKey, node: string, out: string, scale: number) =>
   Effect.gen(function* () {
     if (node === "" || out === "") return yield* new BadInput({ detail: "`export` needs -node and -out" })
     if (scale < 0.5 || scale > 4) return yield* new BadInput({ detail: "-scale must be from 0.5 to 4" })
@@ -189,7 +185,7 @@ export const MAX_EVAL = Duration.minutes(5)
 /** The time an eval run gets, on top of the script's own, to start the browser and open the file. */
 export const OPEN_GRACE = Duration.minutes(1)
 
-export const runEval = (key: FileKey, script: string, timeout: Duration.Duration): Run =>
+export const runEval = (key: FileKey, script: string, timeout: Duration.Duration) =>
   Effect.gen(function* () {
     if (Duration.toMillis(timeout) <= 0 || Duration.isGreaterThan(timeout, MAX_EVAL)) return yield* new BadInput({ detail: "-timeout must be above 0 and at most 5m0s" })
     if (script.trim() === "") return yield* new BadInput({ detail: "the script is empty" })
@@ -197,7 +193,7 @@ export const runEval = (key: FileKey, script: string, timeout: Duration.Duration
     return json(answer.result === undefined ? null : answer.result)
   })
 
-export const runRename = (key: FileKey, name: string, yes: boolean): Run =>
+export const runRename = (key: FileKey, name: string, yes: boolean) =>
   Effect.gen(function* () {
     if (name.trim() === "") return yield* new BadInput({ detail: "the new name is empty" })
     if (!yes) return `renamed: false\nhelp: Add -yes to rename to ${value(name)}\n`
@@ -207,7 +203,7 @@ export const runRename = (key: FileKey, name: string, yes: boolean): Run =>
   })
 
 /** ps for every process: doctor keeps the renderers of Ego Lite and the Figma app, busiest first. */
-export const parseRenderers = (ps: string): Array<[string, string, string]> => {
+export const parseRenderers = (ps: string) => {
   const rows: Array<[string, string, string]> = []
   for (const line of ps.split("\n")) {
     const fields = line.trim().split(/\s+/)
@@ -223,7 +219,7 @@ export const parseRenderers = (ps: string): Array<[string, string, string]> => {
   return rows.sort((a, b) => Number(b[1]) - Number(a[1])).slice(0, 8)
 }
 
-const renderers = (): string => {
+const renderers = () => {
   try {
     return execFileSync("ps", ["-axo", "pid=,%cpu=,command="], { encoding: "utf8" })
   } catch {
@@ -231,7 +227,7 @@ const renderers = (): string => {
   }
 }
 
-export const runDoctor = (processes: () => string = renderers): Effect.Effect<string, AppError, FigmaClient | LockManager | FigmaConfig> =>
+export const runDoctor = (processes: () => string = renderers) =>
   Effect.gen(function* () {
     const client = yield* FigmaClient
     const locks = yield* LockManager

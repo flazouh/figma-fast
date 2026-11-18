@@ -1,19 +1,14 @@
-// One Ego Space per file, and a cap on how many Figma tabs run at once.
-//
-// A file's runs share the Space figmacli-<key>, so a run on one file never moves another file's tab. Each open
-// Figma tab costs a lot of CPU, so FIGMACLI_MAX_TABS caps the runs that drive a tab at once, across every process:
-// a run holds one of N slot files, tabs/slot-<i>.lock, by flock, after its file lock and for as long as it runs.
 import { Clock, Context, Duration, Effect, Layer, Scope, Semaphore } from "effect"
 import { mkdirSync, statSync, utimesSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { FigmaConfig } from "./config.ts"
 import { LockIOError, TabTimeout } from "./domain.ts"
-import { type LockFile, openLockFile, tryLock, unlockAndClose } from "./flock.ts"
+import { openLockFile, tryLock, unlockAndClose } from "./flock.ts"
 
 /** The Space of keyless runs (doctor), and the prefix of every file's Space. figmacli 0.1.0 used it for all. */
 export const BASE_SPACE = "figmacli"
 
-export const spaceFor = (key: string | undefined): string => (key ? `${BASE_SPACE}-${key}` : BASE_SPACE)
+export const spaceFor = (key: string | undefined) => (key ? `${BASE_SPACE}-${key}` : BASE_SPACE)
 
 export interface SpacePoolShape {
   /** Holds a tab slot until the scope closes. With no cap, or a transport that opens no tab, it holds nothing. */
@@ -45,7 +40,7 @@ export const makeSpacePool = Effect.gen(function* () {
       for (;;) {
         for (let slot = 0; slot < config.maxTabs; slot++) {
           const path = join(tabsDir, `slot-${slot}.lock`)
-          const file = yield* Effect.try({ try: (): LockFile => openLockFile(path), catch: (cause) => new LockIOError({ path, cause }) })
+          const file = yield* Effect.try({ try: () => openLockFile(path), catch: (cause) => new LockIOError({ path, cause }) })
           if (tryLock(file, "exclusive")) {
             yield* Effect.addFinalizer(() => Effect.sync(() => unlockAndClose(file)))
             return
@@ -67,7 +62,6 @@ export const makeSpacePool = Effect.gen(function* () {
         writeFileSync(stamp(key), now.toISOString(), { mode: 0o600 })
         utimesSync(stamp(key), now, now)
       } catch {
-        // A missing stamp only makes the next run open the Space alone.
       }
     })
 
@@ -87,7 +81,6 @@ export const makeSpacePool = Effect.gen(function* () {
         writeFileSync(stamp(key), "")
         utimesSync(stamp(key), new Date(0), new Date(0))
       } catch {
-        // nothing to forget
       }
     })
 

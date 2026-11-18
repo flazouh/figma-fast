@@ -1,4 +1,3 @@
-// One child process with stdin in and both streams out, under a time limit. Interrupting the fiber kills it.
 import { Duration, Effect } from "effect"
 import { spawn } from "node:child_process"
 
@@ -11,7 +10,7 @@ export interface ProcessResult {
   readonly timedOut: boolean
 }
 
-export const runProcess = (command: ReadonlyArray<string>, stdin: string, timeout: Duration.Duration): Effect.Effect<ProcessResult> =>
+export const runProcess = (command: ReadonlyArray<string>, stdin: string, timeout: Duration.Duration) =>
   Effect.callback<ProcessResult>((resume) => {
     const [program, ...args] = command
     const child = spawn(program ?? "", args, { stdio: ["pipe", "pipe", "pipe"] })
@@ -42,7 +41,7 @@ export const runProcess = (command: ReadonlyArray<string>, stdin: string, timeou
   })
 
 /** Finds the line that starts with marker in the script output. */
-export const extractMarked = (output: string, marker: string): string | undefined => {
+export const extractMarked = (output: string, marker: string) => {
   for (const line of output.split("\n")) {
     const trimmed = line.trim()
     if (trimmed.startsWith(marker)) return trimmed.slice(marker.length)
@@ -50,7 +49,7 @@ export const extractMarked = (output: string, marker: string): string | undefine
   return undefined
 }
 
-export const compact = (text: string, max = 400): string => {
+export const compact = (text: string, max = 400) => {
   const flat = text.split(/\s+/).filter(Boolean).join(" ")
   return flat.length > max ? `${flat.slice(0, max)}...` : flat
 }

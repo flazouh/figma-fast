@@ -1,11 +1,6 @@
-// The JSON specs of write, grid, label, swap and arrange: Schema for their shape (an unknown field is an error, as
-// Go's DisallowUnknownFields made it), the checks of figmacli 0.1.0 (internal/figma/spec.go), and the JSON the page
-// script gets, which is what Go's encoder sent: omitempty fields left out when empty, the others always there.
 import { Schema } from "effect"
 import { BadInput } from "./domain.ts"
 import { hexColor } from "./tokens.ts"
-
-// ---- shapes -------------------------------------------------------------------------------------------------
 
 const Str = Schema.optionalKey(Schema.String)
 const Num = Schema.optionalKey(Schema.Number)
@@ -118,7 +113,7 @@ export const Arrangement = Schema.Struct({
 export type Arrangement = typeof Arrangement.Type
 
 /** Parses JSON text against a spec shape; an unknown field is an error. */
-export const decodeSpec = <A>(schema: Schema.Codec<A>, text: string): A | BadInput => {
+export const decodeSpec = <A>(schema: Schema.Codec<A>, text: string) => {
   try {
     return Schema.decodeUnknownSync(schema, { onExcessProperty: "error" })(JSON.parse(text))
   } catch (error) {
@@ -126,18 +121,15 @@ export const decodeSpec = <A>(schema: Schema.Codec<A>, text: string): A | BadInp
   }
 }
 
-// ---- Go's encoder ---------------------------------------------------------------------------------------------
-
-const isEmpty = (v: unknown): boolean =>
+const isEmpty = (v: unknown) =>
   v === undefined || v === null || v === false || v === 0 || v === "" ||
   (Array.isArray(v) && v.length === 0) ||
   (typeof v === "object" && !Array.isArray(v) && Object.keys(v as object).length === 0)
 
-/** Keeps a key only when it is not empty: Go's omitempty. */
-const omitEmpty = (input: Record<string, unknown>, keep: ReadonlySet<string> = new Set()): Record<string, unknown> =>
+const omitEmpty = (input: Record<string, unknown>, keep: ReadonlySet<string> = new Set()) =>
   Object.fromEntries(Object.entries(input).filter(([k, v]) => (keep.has(k) ? v !== undefined && v !== null : !isEmpty(v))))
 
-const overrideJSON = (o: Override): Record<string, unknown> => {
+const overrideJSON = (o: Override) => {
   const out = omitEmpty({ ...o })
   if (o.nested) out.nested = Object.fromEntries(Object.entries(o.nested).map(([k, v]) => [k, overrideJSON(v)]))
   if (isEmpty(out.nested)) delete out.nested
@@ -145,7 +137,7 @@ const overrideJSON = (o: Override): Record<string, unknown> => {
 }
 
 /** A node as Go sent it: pointers (opacity, fillOpacity, gradient) are left out only when absent. */
-export const nodeJSON = (n: Node): Record<string, unknown> => {
+export const nodeJSON = (n: Node) => {
   const out: Record<string, unknown> = { ...omitEmpty({ ...n }, new Set(["opacity", "fillOpacity", "gradient"])), type: n.type ?? "" }
   if (n.gradient) out.gradient = { fill: n.gradient.fill ?? "", opacity: n.gradient.opacity ?? 0, end: n.gradient.end ?? 0 }
   if (n.props && n.props.length > 0) out.props = n.props.map((p) => ({ name: p.name ?? "", type: p.type ?? "", default: p.default ?? null }))
@@ -154,21 +146,21 @@ export const nodeJSON = (n: Node): Record<string, unknown> => {
   return out
 }
 
-export const writeJSON = (s: WriteSpec): Record<string, unknown> => ({
+export const writeJSON = (s: WriteSpec) => ({
   page: s.page ?? "",
   ...(s.section ? { section: { name: s.section.name ?? "", ...omitEmpty({ x: s.section.x, y: s.section.y }) } } : {}),
   ...(s.tokens ? { tokens: { collection: s.tokens.collection ?? "", ...omitEmpty({ reuse: s.tokens.reuse, mode: s.tokens.mode }), colors: s.tokens.colors ?? null } } : {}),
   nodes: (s.nodes ?? []).map(nodeJSON),
 })
 
-export const gridJSON = (s: GridSpec): Record<string, unknown> => ({
+export const gridJSON = (s: GridSpec) => ({
   page: s.page ?? "", section: s.section ?? "", collection: s.collection ?? "",
   columns: s.columns ?? null,
   rows: s.rows ? s.rows.map((r) => ({ name: r.name ?? "", cells: r.cells ?? null })) : null,
   ...omitEmpty({ below: s.below, gap: s.gap }),
 })
 
-export const labelJSON = (s: LabelSpec): Record<string, unknown> => ({
+export const labelJSON = (s: LabelSpec) => ({
   page: s.page ?? "", section: s.section ?? "", set: s.set ?? "", collection: s.collection ?? "",
   x: s.x ?? 0, y: s.y ?? 0, mode: s.mode ?? "",
   ...omitEmpty({ rows: s.rows, cols: s.cols, blocks: s.blocks, columns: s.columns }),
@@ -176,9 +168,9 @@ export const labelJSON = (s: LabelSpec): Record<string, unknown> => ({
   ...omitEmpty({ left: s.left, minWidth: s.minWidth, rename: s.rename, values: s.values }),
 })
 
-export const swapJSON = (s: SwapSpec): Record<string, unknown> => ({ from: s.from ?? "", to: s.to ?? "", map: s.map ?? null, keep: s.keep ?? null })
+export const swapJSON = (s: SwapSpec) => ({ from: s.from ?? "", to: s.to ?? "", map: s.map ?? null, keep: s.keep ?? null })
 
-export const arrangeJSON = (s: Arrangement): Record<string, unknown> =>
+export const arrangeJSON = (s: Arrangement) =>
   omitEmpty({
     rename: s.rename?.map((r) => ({ from: r.from ?? "", to: r.to ?? "" })),
     order: s.order,
@@ -187,8 +179,6 @@ export const arrangeJSON = (s: Arrangement): Record<string, unknown> =>
     sections: s.sections?.map((m) => ({ page: m.page ?? "", name: m.name ?? "", x: m.x ?? 0, y: m.y ?? 0 })),
   })
 
-// ---- checks -------------------------------------------------------------------------------------------------
-
 const svgColor = /^#[0-9a-f]{6}$/
 const aligns = new Set(["", "start", "center", "end", "baseline"])
 const justifys = new Set(["", "start", "center", "end", "between"])
@@ -196,12 +186,12 @@ const bindTypes: Record<string, string> = { characters: "TEXT", visible: "BOOLEA
 const varFields = new Set(["w", "h", "minW", "minH", "gap", "padX", "padY", "padL", "padR", "padT", "padB", "radius", "stroke"])
 const q = JSON.stringify
 
-const checkColor = (value: string, known: ReadonlySet<string>): string | undefined => {
+const checkColor = (value: string, known: ReadonlySet<string>) => {
   if (value.startsWith("$")) return known.has(value.slice(1)) ? undefined : `the spec uses token ${value}, which it does not define`
   return hexColor.test(value) ? undefined : `${q(value)} is not a hex colour or a $token`
 }
 
-const checkPaint = (o: Override, known: ReadonlySet<string>): string | undefined => {
+const checkPaint: (o: Override, known: ReadonlySet<string>) => string | undefined = (o, known) => {
   for (const color of Object.values(o.paint ?? {})) {
     const e = checkColor(color, known)
     if (e) return e
@@ -213,7 +203,7 @@ const checkPaint = (o: Override, known: ReadonlySet<string>): string | undefined
   return undefined
 }
 
-const checkFields = (n: Node): string | undefined => {
+const checkFields = (n: Node) => {
   const t = n.type ?? ""
   const name = q(n.name ?? "")
   const box = t === "frame" || t === "component" || t === "variants"
@@ -251,7 +241,7 @@ const checkFields = (n: Node): string | undefined => {
   return undefined
 }
 
-const checkNode = (n: Node, known: ReadonlySet<string>): string | undefined => {
+const checkNode: (n: Node, known: ReadonlySet<string>) => string | undefined = (n, known) => {
   const t = n.type ?? ""
   const name = q(n.name ?? "")
   const children = n.children ?? []
@@ -312,7 +302,7 @@ const checkNode = (n: Node, known: ReadonlySet<string>): string | undefined => {
   return undefined
 }
 
-const checkBinds = (n: Node, inherited: ReadonlyMap<string, string> | undefined): string | undefined => {
+const checkBinds: (n: Node, inherited: ReadonlyMap<string, string> | undefined) => string | undefined = (n, inherited) => {
   const t = n.type ?? ""
   const name = q(n.name ?? "")
   let props = inherited
@@ -346,7 +336,7 @@ const checkBinds = (n: Node, inherited: ReadonlyMap<string, string> | undefined)
 }
 
 /** Refuses a write spec the page script would draw wrong. */
-export const checkWrite = (s: WriteSpec): BadInput | undefined => {
+export const checkWrite = (s: WriteSpec) => {
   const fail = (detail: string) => new BadInput({ detail })
   if (!(s.page ?? "").trim()) return fail("the spec names no page")
   if (s.section && !(s.section.name ?? "").trim()) return fail("the spec's section has no name")
@@ -369,9 +359,9 @@ export const checkWrite = (s: WriteSpec): BadInput | undefined => {
 }
 
 /** How many nodes a write spec draws. */
-export const countNodes = (nodes: ReadonlyArray<Node>): number => nodes.reduce((total, n) => total + 1 + countNodes(n.children ?? []), 0)
+export const countNodes: (nodes: ReadonlyArray<Node>) => number = (nodes) => nodes.reduce((total, n) => total + 1 + countNodes(n.children ?? []), 0)
 
-export const checkGrid = (g: GridSpec): BadInput | undefined => {
+export const checkGrid = (g: GridSpec) => {
   const fail = (detail: string) => new BadInput({ detail })
   const columns = g.columns ?? []
   const rows = g.rows ?? []
@@ -404,7 +394,7 @@ export const checkGrid = (g: GridSpec): BadInput | undefined => {
   return undefined
 }
 
-export const checkLabel = (l: LabelSpec): BadInput | undefined => {
+export const checkLabel = (l: LabelSpec) => {
   const fail = (detail: string) => new BadInput({ detail })
   if (!l.page || !l.section || !l.set || !l.collection) return fail("the spec needs page, section, set and collection")
   if ((l.colWidth ?? 0) <= 0) return fail("the spec needs colWidth")

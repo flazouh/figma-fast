@@ -1,4 +1,3 @@
-// A client stack on a temporary queue folder, with a scripted transport in place of Figma.
 import { Context, Deferred, Effect, Layer, Queue } from "effect"
 import { spawn } from "node:child_process"
 import { mkdtempSync } from "node:fs"
@@ -11,7 +10,7 @@ import { LockManager, LockManagerLive, type OnWait } from "../src/locks.ts"
 import { SpacePoolLive } from "../src/spaces.ts"
 import { type TransportShape, Transports } from "../src/transport.ts"
 
-export const tempQueue = (): string => mkdtempSync(join(tmpdir(), "figma-fast-test-"))
+export const tempQueue = () => mkdtempSync(join(tmpdir(), "figma-fast-test-"))
 
 /** One run the scripted transport is holding: the test lets it finish by opening its gate. */
 export interface Held {

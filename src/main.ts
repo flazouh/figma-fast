@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-// figma-fast: figmacli 0.1.0's commands, with per-file locks so different files run at once.
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { Duration, Effect, Layer } from "effect"
 import { Command } from "effect/cli"
@@ -14,7 +13,6 @@ import { TransportsLive } from "./transport.ts"
 const args = normalizeArgs(process.argv.slice(2))
 
 if (args[0] === REAP_COMMAND) {
-  // The reaper's own stack: no reaper of its own after its runs.
   const layer = FigmaClientLive.pipe(
     Layer.provideMerge(Layer.mergeAll(LockManagerLive(), SpacePoolLive, TransportsLive, Layer.succeed(AfterRun, () => {}))),
     Layer.provideMerge(FigmaConfigLive),
@@ -25,7 +23,6 @@ if (args[0] === REAP_COMMAND) {
 } else {
   const program = Command.runWith(makeRoot(AppLayer), { version: VERSION })(args).pipe(
     Effect.provide(NodeServices.layer),
-    // effect/cli has printed the usage error; the exit code says it was the invocation.
     Effect.catch(() => Effect.sync(() => void (process.exitCode = 2))),
   )
   await Effect.runPromise(program)

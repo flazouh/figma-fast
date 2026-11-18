@@ -1,4 +1,3 @@
-// FIGMACLI_MAX_TABS caps the runs that drive a tab, across processes; each file gets its own Space.
 import { assert, describe, it } from "@effect/vitest"
 import { Deferred, Duration, Effect, Fiber, Queue } from "effect"
 import type { FileKey } from "../src/domain.ts"
@@ -15,7 +14,6 @@ describe("tab slots and Spaces", () => {
       const one = yield* buildClient(settings, [transport])
       const two = yield* buildClient(settings, [transport])
       const fibers = yield* Effect.forEach(keys, (key, i) => Effect.forkChild((i % 2 === 0 ? one : two).client.call({ op: "write", key })))
-      // Let the runs through one by one: each time one finishes, at most one more may start.
       for (let i = 0; i < keys.length; i++) {
         const held = yield* Queue.take(started)
         assert.isAtMost(stats.active, 2)
@@ -46,7 +44,6 @@ describe("tab slots and Spaces", () => {
       yield* client.call({ op: "pages", key: key(1) })
       yield* client.call({ op: "doctor" })
       assert.deepStrictEqual(stats.runs.map((r) => [r.space, r.exclusive]), [
-        // The first run on a cold Space opens its tab alone, so it locks as a write.
         ["figmacli-FILE00000001", true],
         ["figmacli-FILE00000001", false],
         ["figmacli", false],

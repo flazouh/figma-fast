@@ -1,5 +1,3 @@
-// The ported pieces against figmacli 0.1.0: tokens (compared with the Go compiler's own output), TOON, durations,
-// flags, specs, and the reaper's idle rule under TestClock.
 import { assert, describe, it } from "@effect/vitest"
 import { Duration, Effect, Layer } from "effect"
 import { TestClock } from "effect/testing"

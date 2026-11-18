@@ -1,5 +1,3 @@
-// The data shape every layer shares. A run is one Request for one file (or none, for doctor), with an Access
-// that decides its lock. Errors are tagged so the CLI can pick the exit code and the client can pick a fallback.
 import { Data } from "effect"
 
 /** A Figma file key, as a link or bare key parses to. */
@@ -40,7 +38,7 @@ export interface Request {
 const readOps: ReadonlySet<Op> = new Set<Op>(["file", "pages", "read", "export", "plan", "doctor", "check"])
 
 /** A dry run changes nothing, so it locks as a read. eval may change the file, so it locks as a write. */
-export const accessOf = (request: Request): Access =>
+export const accessOf = (request: Request) =>
   readOps.has(request.op) || request.dry === true ? "read" : "write"
 
 /** Who waits for, or holds, a file's lock. One JSON file per run in the file's ticket folder. */
@@ -54,10 +52,8 @@ export interface Ticket {
   readonly since: number
 }
 
-export const describeTicket = (t: Ticket): string =>
+export const describeTicket = (t: Ticket) =>
   `pid ${t.pid}, ${t.access} "${t.op}" in ${t.dir}, ${t.state} since ${new Date(t.since).toTimeString().slice(0, 8)}`
-
-// ---- errors -------------------------------------------------------------------------------------------------
 
 /** The lock stayed held past FIGMACLI_LOCK_WAIT. holders names who held it. */
 export class LockTimeout extends Data.TaggedError("LockTimeout")<{
@@ -66,7 +62,7 @@ export class LockTimeout extends Data.TaggedError("LockTimeout")<{
   readonly waitedMs: number
   readonly holders: ReadonlyArray<Ticket>
 }> {
-  override get message(): string {
+  override get message() {
     const who = this.holders.length === 0 ? "a process that left no ticket" : this.holders.map(describeTicket).join("; ")
     return `figma-fast waited ${Math.round(this.waitedMs / 1000)} s for the ${this.access} lock on ${this.key}: ${who} holds it`
   }
@@ -74,14 +70,14 @@ export class LockTimeout extends Data.TaggedError("LockTimeout")<{
 
 /** Every tab slot stayed taken past FIGMACLI_LOCK_WAIT. */
 export class TabTimeout extends Data.TaggedError("TabTimeout")<{ readonly max: number; readonly waitedMs: number }> {
-  override get message(): string {
+  override get message() {
     return `figma-fast waited ${Math.round(this.waitedMs / 1000)} s for a Figma tab: all ${this.max} (FIGMACLI_MAX_TABS) are busy`
   }
 }
 
 /** The lock folder could not be read or written. */
 export class LockIOError extends Data.TaggedError("LockIOError")<{ readonly path: string; readonly cause: unknown }> {
-  override get message(): string {
+  override get message() {
     return `figma-fast cannot use its lock file ${this.path}: ${String((this.cause as Error)?.message ?? this.cause)}`
   }
 }
@@ -91,42 +87,42 @@ export class TransportUnavailable extends Data.TaggedError("TransportUnavailable
   readonly transport: string
   readonly reason: string
 }> {
-  override get message(): string {
+  override get message() {
     return `the ${this.transport} transport is unavailable: ${this.reason}`
   }
 }
 
 /** No tab of the Figma app holds the file. Nothing ran in the page. */
 export class NoDesktopTab extends Data.TaggedError("NoDesktopTab")<{ readonly key: string }> {
-  override get message(): string {
+  override get message() {
     return `no tab of the Figma app holds file ${this.key}: open it in the app, then retry`
   }
 }
 
 /** The transport ran and failed without an answer. A write may have landed. */
 export class RunFailed extends Data.TaggedError("RunFailed")<{ readonly transport: string; readonly detail: string }> {
-  override get message(): string {
+  override get message() {
     return `the ${this.transport} run failed: ${this.detail}`
   }
 }
 
 /** The run outlived its limit. It may still run in the tab. */
 export class RunTimeout extends Data.TaggedError("RunTimeout")<{ readonly transport: string; readonly ms: number }> {
-  override get message(): string {
+  override get message() {
     return `the run did not finish within ${Math.round(this.ms / 1000)} s, opening the file included. It may still run in the Figma tab`
   }
 }
 
 /** The page script ran and answered why not. */
 export class PageError extends Data.TaggedError("PageError")<{ readonly detail: string }> {
-  override get message(): string {
+  override get message() {
     return this.detail
   }
 }
 
 /** A wrong argument, flag value or spec. Exit code 2. */
 export class BadInput extends Data.TaggedError("BadInput")<{ readonly detail: string }> {
-  override get message(): string {
+  override get message() {
     return this.detail
   }
 }
@@ -137,13 +133,11 @@ export class Findings extends Data.TaggedError("Findings")<{ readonly count: num
 export type TransportError = TransportUnavailable | NoDesktopTab | RunFailed | RunTimeout
 export type AppError = TransportError | LockTimeout | TabTimeout | LockIOError | PageError | BadInput | Findings
 
-// ---- file keys ----------------------------------------------------------------------------------------------
-
 const fileURL = /^https?:\/\/(?:www\.)?figma\.com\/(?:design|file|make|board|slides|proto)\/([A-Za-z0-9]{10,})(?:[/?#]|$)/
 const bareKey = /^[A-Za-z0-9]{10,}$/
 
 /** Takes a file link or a bare file key. */
-export const parseKey = (value: string): FileKey | BadInput => {
+export const parseKey = (value: string) => {
   const match = fileURL.exec(value)
   if (match?.[1]) return match[1] as FileKey
   if (bareKey.test(value)) return value as FileKey

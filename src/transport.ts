@@ -1,12 +1,3 @@
-// The two ways to reach a Figma page, and the order to try them in.
-//
-// desktop: the real Figma app, through the CDP holder's unix socket. node runs the page script with the shim,
-// which attaches to the app tab that already holds the file. It opens no tab, so it takes no tab slot.
-// ego: Ego Lite through `ego-browser nodejs`, in the file's own Space. It opens a tab, so it takes a slot.
-//
-// Transports lists them in order: FIGMACLI_TRANSPORT=desktop or ego picks one; auto puts desktop first when its
-// holder answers a CDP call, and ego after it. The client moves to the next one only on an error that proves
-// nothing ran in a page: TransportUnavailable or NoDesktopTab.
 import { Context, Duration, Effect, Layer } from "effect"
 import { mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { createConnection } from "node:net"
@@ -29,10 +20,8 @@ export interface TransportShape {
 
 export class Transports extends Context.Service<Transports, ReadonlyArray<TransportShape>>()("figma-fast/Transports") {}
 
-// ---- desktop ------------------------------------------------------------------------------------------------
-
 /** Says a holder answers a CDP call on the socket within the limit. It sends one Browser.getVersion. */
-export const desktopHealthy = (socket: string, limit: Duration.Duration = Duration.seconds(1)): Effect.Effect<boolean> =>
+export const desktopHealthy = (socket: string, limit: Duration.Duration = Duration.seconds(1)) =>
   Effect.callback<boolean>((resume) => {
     const id = 1 + Math.floor(Math.random() * 1e9)
     const conn = createConnection(socket)
@@ -51,7 +40,6 @@ export const desktopHealthy = (socket: string, limit: Duration.Duration = Durati
         try {
           if ((JSON.parse(line) as { id?: number }).id === id) return done(true)
         } catch {
-          // not ours
         }
       }
       buffer = buffer.slice(buffer.lastIndexOf("\n") + 1)
@@ -62,7 +50,6 @@ export const desktopHealthy = (socket: string, limit: Duration.Duration = Durati
     })
   })
 
-/** Writes the run's module to a private file, removed when the scope closes. */
 const scriptFile = (queueDir: string, source: string) =>
   Effect.acquireRelease(
     Effect.sync(() => {
@@ -75,7 +62,7 @@ const scriptFile = (queueDir: string, source: string) =>
     (path) => Effect.sync(() => rmSync(path, { force: true })),
   )
 
-export const makeDesktop = (config: Settings): TransportShape => ({
+export const makeDesktop = (config: Settings) => ({
   name: "desktop",
   opensTabs: false,
   run: (request, timeout) =>
@@ -83,8 +70,8 @@ export const makeDesktop = (config: Settings): TransportShape => ({
       const source =
         `const INPUT = ${JSON.stringify(request)};\nconst SOCKET = ${JSON.stringify(config.desktopSocket)};\n` +
         `const CALL_LIMIT = ${120_000};\n${shim}\n${script}\nawait endDesktop();\nprocess.exit(0);\n`
-      // A file, not stdin: Bun's node shim, which `bun --bun` puts first on PATH, cannot read a module from stdin.
       const result = yield* Effect.scoped(
+        // WARNING: run the page script from a file: the Bun node shim cannot read a module from stdin.
         Effect.flatMap(scriptFile(config.queueDir, source), (path) => runProcess([config.node, path], "", timeout)),
       )
       if (result.missing) {
@@ -100,23 +87,20 @@ export const makeDesktop = (config: Settings): TransportShape => ({
       if (combined.includes("no tab of the Figma app holds file")) return yield* new NoDesktopTab({ key: request.key ?? "" })
       return yield* new RunFailed({ transport: "desktop", detail: compact(combined, 600) })
     }),
-})
+}) satisfies TransportShape
 
-// ---- ego ----------------------------------------------------------------------------------------------------
-
-/** ego's message when the task space vanished under the script. */
 const SPACE_LOST = "Task space not found"
 
-const egoCommand = (config: Settings): Array<string> => {
+const egoCommand = (config: Settings) => {
   const [program, ...rest] = config.egoBrowser
   const server = config.egoServerName ? [`--ego-server-name=${config.egoServerName}`] : []
   return [program ?? "ego-browser", ...rest, ...server, "nodejs"]
 }
 
-const explain = (text: string): string | undefined =>
+const explain = (text: string) =>
   text.includes("not signed in") ? "the browser is not signed in to Figma. Open figma.com in the browser, sign in, then retry" : undefined
 
-export const makeEgo = (config: Settings, retryable: (request: Request) => boolean): TransportShape => {
+export const makeEgo = (config: Settings, retryable: (request: Request) => boolean) => {
   const once = (request: Request, timeout: Duration.Duration) =>
     Effect.gen(function* () {
       const result = yield* runProcess(egoCommand(config), `const INPUT = ${JSON.stringify(request)};\n${script}`, timeout)
@@ -130,7 +114,7 @@ export const makeEgo = (config: Settings, retryable: (request: Request) => boole
       Effect.gen(function* () {
         let attempt = yield* once(request, timeout)
         const lost = attempt.combined.includes(SPACE_LOST)
-        // ego sometimes loses the task space between listing and using it; one retry finds or makes it again.
+        // WARNING: only reads may be retried after a lost Space; a retried write could apply twice.
         if (lost && retryable(request)) attempt = yield* once(request, timeout)
         const { result, combined, line } = attempt
         if (line !== undefined) return line
@@ -142,13 +126,11 @@ export const makeEgo = (config: Settings, retryable: (request: Request) => boole
         if (flat === "") return yield* new RunFailed({ transport: "ego", detail: "the browser returned nothing at all" })
         return yield* new RunFailed({ transport: "ego", detail: explain(flat) ?? flat })
       }),
-  }
+  } satisfies TransportShape
 }
 
-// ---- order --------------------------------------------------------------------------------------------------
-
 /** Only a known read may run twice: the first run of a write may have landed. */
-export const readOnly = (request: Request): boolean =>
+export const readOnly = (request: Request) =>
   ["file", "pages", "read", "export", "plan", "doctor", "check", "close"].includes(request.op) || request.dry === true
 
 /** The transports from the settings: forced, or desktop then ego when the holder answers, else ego alone. */

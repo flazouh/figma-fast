@@ -1,7 +1,6 @@
 import { defineConfig } from "vitest/config"
 
 export default defineConfig({
-  // Bun embeds the page scripts with `with { type: "text" }`; Vite ignores the attribute, so this gives tests the text.
   plugins: [
     {
       name: "assets-as-text",
@@ -12,5 +11,5 @@ export default defineConfig({
       },
     },
   ],
-  test: { include: ["test/**/*.test.ts"], pool: "threads", testTimeout: 20_000 },
+  test: { include: ["test/**/*.test.ts"], pool: "threads" },
 })

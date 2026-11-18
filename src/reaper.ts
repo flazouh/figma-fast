@@ -1,5 +1,3 @@
-// The reaper closes each file's Space once nobody has used it for FIGMACLI_IDLE_CLOSE. One reaper runs at a time,
-// in its own process (`figma-fast _reap`), started after a run; it ends once every Space it watched is closed.
 import { Clock, Duration, Effect } from "effect"
 import { spawn } from "node:child_process"
 import { closeSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs"
@@ -46,14 +44,13 @@ export const reapOnce = Effect.gen(function* () {
 const pidFile = (queueDir: string) => join(queueDir, "reaper-fast.pid")
 
 /** Makes this process the one reaper, or says another one runs. The pid file is created exclusively. */
-export const claimReaper = (queueDir: string): (() => void) | undefined => {
+export const claimReaper = (queueDir: string) => {
   mkdirSync(queueDir, { recursive: true, mode: 0o700 })
   try {
     const pid = Number(readFileSync(pidFile(queueDir), "utf8"))
     if (pid > 0 && alive(pid)) return undefined
     rmSync(pidFile(queueDir), { force: true })
   } catch {
-    // no reaper yet
   }
   try {
     const fd = openSync(pidFile(queueDir), "wx", 0o600)
@@ -65,7 +62,7 @@ export const claimReaper = (queueDir: string): (() => void) | undefined => {
   }
 }
 
-export const reaperRuns = (queueDir: string): boolean => {
+export const reaperRuns = (queueDir: string) => {
   try {
     const pid = Number(readFileSync(pidFile(queueDir), "utf8"))
     return pid > 0 && alive(pid)
@@ -75,15 +72,13 @@ export const reaperRuns = (queueDir: string): boolean => {
 }
 
 /** Starts the reaper in the background when none runs. It outlives the run that started it. */
-export const startReaper = (queueDir: string) => (): void => {
+export const startReaper = (queueDir: string) => () => {
   if (reaperRuns(queueDir)) return
-  // A compiled binary is its own program; under `bun src/main.ts` the script comes after bun.
   const script = process.argv[1]
   const args = script && /\.(ts|js|mjs)$/.test(script) ? [script, REAP_COMMAND] : [REAP_COMMAND]
   try {
     spawn(process.execPath, args, { detached: true, stdio: "ignore" }).unref()
   } catch {
-    // The Space then stays open until the next run starts a reaper.
   }
 }
 

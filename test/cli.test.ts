@@ -1,5 +1,3 @@
-// The binary end to end, through effect/cli, against a fake ego-browser: output formats, exit codes, -yes safety,
-// single-dash flags, and two processes on two files running at once.
 import { assert, describe, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { spawn } from "node:child_process"
@@ -109,9 +107,8 @@ describe("the command line", () => {
 
   it.live("with FIGMACLI_MAX_TABS=1 the same two runs wait for each other", () =>
     Effect.gen(function* () {
-      const { env } = setup({ FAKE_EGO_BARRIER: "2", FIGMACLI_MAX_TABS: "1" })
+      const { env } = setup({ FAKE_EGO_BARRIER: "2", FAKE_EGO_BARRIER_MS: "500", FIGMACLI_MAX_TABS: "1" })
       const runs = yield* Effect.all([cli(["read", "AAAAAAAAAAAA"], env), cli(["read", "BBBBBBBBBBBB"], env)], { concurrency: 2 })
-      // The barrier needs both at once, so the first run through it gives up and says why.
       assert.isTrue(runs.some((r) => r.code === 1 && r.stdout.includes("barrier")))
     }))
 

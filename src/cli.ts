@@ -1,6 +1,3 @@
-// The command line: effect/cli parses it, after single-dash long flags (-yes, -page Mockups) are turned into the
-// double-dash form it reads, so every figmacli 0.1.0 invocation still parses. Exit codes follow AXI: 0 success,
-// 1 failure (check's findings too), 2 a wrong invocation.
 import { Effect, Layer } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 import { AfterRun, FigmaClient, FigmaClientLive } from "./client.ts"
@@ -17,7 +14,7 @@ export const VERSION = "0.2.0"
 const BIN = "figma-fast"
 
 /** Turns -name and -name=value into --name forms. A lone "-" (stdin) and anything after "--" stay as they are. */
-export const normalizeArgs = (args: ReadonlyArray<string>): Array<string> => {
+export const normalizeArgs = (args: ReadonlyArray<string>) => {
   const out: Array<string> = []
   let rest = false
   for (const arg of args) {
@@ -48,10 +45,10 @@ type Services = FigmaClient | LockManager | FigmaConfig
 /** The output of one command, or why not: stdout, stderr, exit code. */
 export interface Outcome { readonly stdout: string; readonly stderr: string; readonly code: number }
 
-export const outcomeOf = <R>(name: string, dataOut: boolean, run: Effect.Effect<string, AppError, R>): Effect.Effect<Outcome, never, R> =>
+export const outcomeOf = <R>(name: string, dataOut: boolean, run: Effect.Effect<string, AppError, R>) =>
   run.pipe(
-    Effect.map((stdout): Outcome => ({ stdout, stderr: "", code: 0 })),
-    Effect.catch((error: AppError): Effect.Effect<Outcome> => {
+    Effect.map((stdout) => ({ stdout, stderr: "", code: 0 })),
+    Effect.catch((error: AppError) => {
       if (error._tag === "Findings") return Effect.succeed({ stdout: error.report, stderr: "", code: 1 })
       const usage = error._tag === "BadInput"
       const report = `error: ${error.message}\n${usage ? `help: Run \`${BIN} ${name} --help\` for its flags\n` : ""}`
@@ -60,7 +57,6 @@ export const outcomeOf = <R>(name: string, dataOut: boolean, run: Effect.Effect<
     }),
   )
 
-/** Runs a command's effect with the app's services and prints its outcome. */
 const respond = (name: string, dataOut: boolean, run: Effect.Effect<string, AppError, Services>, layer: Layer.Layer<Services, unknown>) =>
   outcomeOf(name, dataOut, run).pipe(
     Effect.provide(layer),
@@ -78,7 +74,7 @@ const keyArg = Argument.String("link|key").pipe(Argument.withDescription("a Figm
 const jsonFlag = Flag.Boolean("json").pipe(Flag.withDefault(false), Flag.withDescription("print JSON instead of TOON"))
 const yesFlag = (what: string) => Flag.Boolean("yes").pipe(Flag.withDefault(false), Flag.withDescription(`really ${what}; only after Alex approved this exact action`))
 
-const withKey = (raw: string, run: (key: FileKey) => Effect.Effect<string, AppError, Services>): Effect.Effect<string, AppError, Services> => {
+const withKey = (raw: string, run: (key: FileKey) => Effect.Effect<string, AppError, Services>) => {
   const key = parseKey(raw)
   return key instanceof BadInput ? Effect.fail(key) : run(key)
 }
@@ -175,7 +171,7 @@ export const SUMMARIES: ReadonlyArray<readonly [string, string]> = [
 ]
 
 /** The top help, in TOON, as figmacli printed it. */
-export const topHelp = (): string =>
+export const topHelp = () =>
   `bin: ${BIN}\nversion: ${VERSION}\ndescription: Figma files: read details, pages and nodes, draw into a Design file, export a node to PNG\n` +
   `credential: the browser session signed in to Figma; no token. Set EGO_BROWSER="ssh <mac> ego-browser" to use another machine's browser\n\n` +
   `commands[${SUMMARIES.length}]{name,summary}:\n${SUMMARIES.map(([n, d]) => `  ${n},${value(d)}`).join("\n")}\n\n` +

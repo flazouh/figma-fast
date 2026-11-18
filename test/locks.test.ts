@@ -1,5 +1,3 @@
-// The per-file lock: writes alone, reads together, files apart. Two client stacks on one queue folder stand for
-// two processes: their in-process semaphores are apart, so they meet only at the flock files.
 import { assert, describe, it } from "@effect/vitest"
 import { Deferred, Duration, Effect, Fiber, Queue } from "effect"
 import type { FileKey } from "../src/domain.ts"
@@ -20,7 +18,6 @@ describe("per-file locks", () => {
       const first = yield* Effect.forkChild(one.client.call({ op: "write", key: A }))
       const held = yield* Queue.take(started)
       const second = yield* Effect.forkChild(two.client.call({ op: "write", key: A }))
-      // The second write says it waits, and names the first.
       const wait = yield* Queue.take(waits)
       assert.strictEqual(wait.holder.pid, process.pid)
       assert.strictEqual(wait.holder.state, "holding")
@@ -61,7 +58,6 @@ describe("per-file locks", () => {
 
       const r1 = yield* Effect.forkChild(one.client.call({ op: "read", key: A }))
       const r2 = yield* Effect.forkChild(two.client.call({ op: "read", key: A }))
-      // Both reads are inside the transport at once: this take would hang if they were serialized.
       const h1 = yield* Queue.take(started)
       const h2 = yield* Queue.take(started)
       assert.strictEqual(stats.active, 2)
@@ -108,7 +104,6 @@ describe("per-file locks", () => {
       const two = yield* buildClient(settings, [transport])
       const a = yield* Effect.forkChild(one.client.call({ op: "write", key: A }))
       const b = yield* Effect.forkChild(two.client.call({ op: "write", key: B }))
-      // A barrier: neither run may finish until both have started, so serialized runs would hang here.
       const ha = yield* Queue.take(started)
       const hb = yield* Queue.take(started)
       assert.strictEqual(stats.active, 2)

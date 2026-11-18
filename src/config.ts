@@ -1,4 +1,3 @@
-// Every setting, read once from the environment through Effect Config. Tests build the service by hand.
 import { Config, Context, Duration, Effect, Layer } from "effect"
 import { homedir, platform, tmpdir } from "node:os"
 import { join } from "node:path"
@@ -37,7 +36,7 @@ export class FigmaConfig extends Context.Service<FigmaConfig, Settings>()("figma
 const units: Record<string, number> = { ns: 1e-6, us: 1e-3, "µs": 1e-3, ms: 1, s: 1000, m: 60_000, h: 3_600_000 }
 
 /** Parses a Go duration ("90s", "20m", "1h30m", "250ms"), as figmacli 0.1.0 read FIGMACLI_LOCK_WAIT. */
-export const parseGoDuration = (value: string): Duration.Duration | undefined => {
+export const parseGoDuration = (value: string) => {
   const text = value.trim()
   if (text === "0") return Duration.zero
   if (!/^([0-9]*\.?[0-9]+(ns|us|µs|ms|s|m|h))+$/.test(text)) return undefined
@@ -49,7 +48,7 @@ export const parseGoDuration = (value: string): Duration.Duration | undefined =>
 }
 
 /** The user's cache folder, as Go's os.UserCacheDir picks it. */
-export const userCacheDir = (): string => {
+export const userCacheDir = () => {
   if (process.env.XDG_CACHE_HOME && platform() !== "darwin") return process.env.XDG_CACHE_HOME
   if (platform() === "darwin") return join(homedir(), "Library", "Caches")
   return homedir() ? join(homedir(), ".cache") : tmpdir()
@@ -87,8 +86,8 @@ export const FigmaConfigLive = Layer.effect(FigmaConfig, Effect.gen(function* ()
 }))
 
 /** Settings for tests and embedders: the defaults with some fields replaced. */
-export const testSettings = (overrides: Partial<Settings> & Pick<Settings, "queueDir">): Settings => ({
-  transport: "auto",
+export const testSettings = (overrides: Partial<Settings> & Pick<Settings, "queueDir">) => ({
+  transport: "auto" as TransportChoice,
   desktopSocket: join(overrides.queueDir, "cdp.sock"),
   lockWait: Duration.seconds(5),
   lockPoll: Duration.millis(10),
@@ -100,4 +99,4 @@ export const testSettings = (overrides: Partial<Settings> & Pick<Settings, "queu
   node: "node",
   reaper: false,
   ...overrides,
-})
+}) satisfies Settings

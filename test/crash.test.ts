@@ -1,4 +1,3 @@
-// A holder that dies, however it dies, gives its file back: the kernel drops its flock, and its ticket goes.
 import { assert, describe, it } from "@effect/vitest"
 import { Context, Duration, Effect, Layer } from "effect"
 import { spawn } from "node:child_process"
@@ -9,7 +8,6 @@ import { tempQueue, testSettings } from "./helpers.ts"
 
 const KEY = "CRASHCRASH12"
 
-/** Starts the fixture in its own process and resolves once it holds the lock. */
 const holdInChild = (queueDir: string) =>
   Effect.acquireRelease(
     Effect.callback<ReturnType<typeof spawn>>((resume) => {
@@ -42,7 +40,6 @@ describe("crash safety", () => {
       const child = yield* holdInChild(queueDir)
       const short = yield* locksWith(queueDir, Duration.millis(150))
 
-      // While it lives, a run times out and names it.
       const error = yield* Effect.flip(Effect.scoped(short.acquire(KEY, "write", "test")))
       assert.strictEqual(error._tag, "LockTimeout")
       assert.match(error.message, new RegExp(`pid ${child.pid}, write "hold-lock fixture"`))

@@ -1,5 +1,3 @@
-// TOON output, as figmacli 0.1.0 writes it (sitecli internal/toon): an object of scalar fields, a table of uniform
-// rows, and a list of strings, with the spec's section 7.2 quoting.
 const indent = "  "
 const numericLike = /^[+-]?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$/
 
@@ -10,20 +8,20 @@ export interface Field {
   readonly raw?: boolean
 }
 
-export const raw = (key: string, value: number | boolean): Field => ({ key, value: String(value), raw: true })
-export const text = (key: string, value: string): Field => ({ key, value })
+export const raw = (key: string, value: number | boolean) => ({ key, value: String(value), raw: true })
+export const text = (key: string, value: string) => ({ key, value })
 
-const mustQuote = (value: string): boolean =>
+const mustQuote = (value: string) =>
   value === "" ||
   value !== value.trim() ||
   value === "true" || value === "false" || value === "null" ||
   numericLike.test(value) ||
   /[:"\\[\]{},]/.test(value) ||
   value.startsWith("-") || value.startsWith("#") ||
-  // biome-ignore lint: control characters are the point
+  // oxlint-disable-next-line no-control-regex
   /[\u0000-\u001f]/.test(value)
 
-const quote = (value: string): string => {
+const quote = (value: string) => {
   let out = '"'
   for (const ch of value) {
     const code = ch.codePointAt(0) ?? 0
@@ -38,20 +36,20 @@ const quote = (value: string): string => {
   return `${out}"`
 }
 
-export const value = (v: string): string => (mustQuote(v) ? quote(v) : v)
-export const key = (k: string): string => (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(k) ? k : quote(k))
+export const value = (v: string) => (mustQuote(v) ? quote(v) : v)
+export const key = (k: string) => (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(k) ? k : quote(k))
 
 /** A TOON document, one block at a time. */
 export class Doc {
   private readonly blocks: Array<string> = []
 
-  object(name: string, ...fields: ReadonlyArray<Field>): this {
+  object(name: string, ...fields: ReadonlyArray<Field>) {
     const depth = name === "" ? "" : indent
     const head = name === "" ? "" : `${key(name)}:\n`
     return this.add(head + fields.map((f) => `${depth}${key(f.key)}: ${f.raw ? f.value : value(f.value)}\n`).join(""))
   }
 
-  table(name: string, columns: ReadonlyArray<string>, rows: ReadonlyArray<ReadonlyArray<string>>): this {
+  table(name: string, columns: ReadonlyArray<string>, rows: ReadonlyArray<ReadonlyArray<string>>) {
     let out = `${key(name)}[${rows.length}]{${columns.map(key).join(",")}}:\n`
     rows.forEach((row, index) => {
       if (row.length !== columns.length) throw new Error(`toon: row ${index} has ${row.length} cells for ${columns.length} columns`)
@@ -60,22 +58,22 @@ export class Doc {
     return this.add(out)
   }
 
-  list(name: string, items: ReadonlyArray<string>): this {
+  list(name: string, items: ReadonlyArray<string>) {
     return this.add(`${key(name)}[${items.length}]:\n${items.map((i) => `${indent}- ${value(i)}\n`).join("")}`)
   }
 
-  private add(block: string): this {
+  private add(block: string) {
     if (block.trim() !== "") this.blocks.push(block.replace(/\n+$/, ""))
     return this
   }
 
-  toString(): string {
+  toString() {
     return this.blocks.length === 0 ? "" : `${this.blocks.join("\n\n")}\n`
   }
 }
 
 /** Go's %g, which figmacli used for sizes such as 375x812: shortest digits, and e-notation from 1e+06 up. */
-export const g = (n: number): string => {
+export const g = (n: number) => {
   if (n === 0 || !Number.isFinite(n)) return String(n)
   const [mantissa = "0", exponent = "0"] = n.toExponential().split("e")
   const exp = Number(exponent)

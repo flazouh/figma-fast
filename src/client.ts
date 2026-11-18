@@ -1,5 +1,3 @@
-// One run: take the file's lock, then a tab slot if the transport opens tabs, then run the page script in the
-// file's Space, and decode its answer. Different files never wait for each other; only the tab cap joins them.
 import { Context, Duration, Effect, Layer } from "effect"
 import { FigmaConfig } from "./config.ts"
 import { type Access, accessOf, type AppError, type NoDesktopTab, PageError, type Request, RunFailed, type TransportError, type TransportUnavailable } from "./domain.ts"
@@ -24,7 +22,7 @@ export class FigmaClient extends Context.Service<FigmaClient, FigmaClientShape>(
 /** Called after each run that used a Space, so the idle reaper runs. */
 export class AfterRun extends Context.Reference<() => void>("figma-fast/AfterRun", { defaultValue: () => () => {} }) {}
 
-/** Nothing ran in a page, so the next transport may take the run, a write included. */
+// WARNING: only errors that prove nothing ran in a page may move on; a write must never run on two transports.
 const movesOn = (error: AppError): error is TransportUnavailable | NoDesktopTab =>
   error._tag === "TransportUnavailable" || error._tag === "NoDesktopTab"
 
@@ -38,9 +36,8 @@ export const makeFigmaClient = Effect.gen(function* () {
   const runOn = (transport: TransportShape, request: Request, timeout: Duration.Duration) =>
     Effect.scoped(Effect.andThen(pool.takeTab(transport.opensTabs), transport.run(request, timeout)))
 
-  /** Tries each transport in order; moves on only when nothing ran in a page. */
-  const runAny = (request: Request, timeout: Duration.Duration): Effect.Effect<string, AppError> => {
-    const attempt = (index: number, last?: TransportError): Effect.Effect<string, AppError> => {
+  const runAny = (request: Request, timeout: Duration.Duration) => {
+    const attempt: (index: number, last?: TransportError) => Effect.Effect<string, AppError> = (index, last) => {
       const transport = transports[index]
       if (!transport) return Effect.fail(last ?? new RunFailed({ transport: "none", detail: "no transport is configured" }))
       return runOn(transport, request, timeout).pipe(
@@ -57,11 +54,12 @@ export const makeFigmaClient = Effect.gen(function* () {
     Effect.gen(function* () {
       const key = request.key
       let access: Access = accessOf(request)
-      // A cold Space opens its tab: the first run on a file does that alone, so two reads never race to open it.
+      // WARNING: a cold Space opens a tab, so its first read takes the write lock or two readers open two tabs.
       if (key && access === "read" && transports[0]?.opensTabs && (yield* pool.lastUsed(key)) === undefined) access = "write"
       const timeout = options.timeout ?? config.runTimeout
       const raw = yield* Effect.scoped(
         Effect.gen(function* () {
+          // WARNING: take the file lock before a tab slot, never the reverse, or a full pool deadlocks against a lock holder.
           if (key) yield* locks.acquire(key, access, request.op)
           const line = yield* runAny({ ...request, space: spaceFor(key), exclusive: access === "write" }, timeout)
           if (key && request.op !== "close") yield* pool.touch(key)
@@ -83,7 +81,7 @@ export const makeFigmaClient = Effect.gen(function* () {
   return FigmaClient.of({ call, transport: transports[0]?.name ?? "none" })
 })
 
-const friendly = (raw: string): string => {
+const friendly = (raw: string) => {
   const flat = raw.split(/\s+/).filter(Boolean).join(" ")
   return flat.includes("not signed in") ? "the browser is not signed in to Figma. Open figma.com in the browser, sign in, then retry" : raw
 }

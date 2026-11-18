@@ -1,7 +1,4 @@
 #!/usr/bin/env bun
-// A stand-in for `ego-browser nodejs`: reads the page script on stdin, takes INPUT from its first line, logs it,
-// and answers each op as the page script would. op "read" is a barrier across processes: it says it started,
-// then answers only once FAKE_EGO_BARRIER runs have started, so serialized runs fail.
 import { appendFileSync, readdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
@@ -25,7 +22,7 @@ const answers: Record<string, unknown> = {
 if (input.op === "read") {
   const want = Number(process.env.FAKE_EGO_BARRIER ?? "1")
   writeFileSync(join(dir, `started-${input.space}-${process.pid}`), "")
-  const stop = Date.now() + 5000
+  const stop = Date.now() + Number(process.env.FAKE_EGO_BARRIER_MS ?? "5000")
   while (readdirSync(dir).filter((n) => n.startsWith("started-")).length < want) {
     if (Date.now() > stop) {
       emit({ error: "barrier: the other run never started beside this one" })

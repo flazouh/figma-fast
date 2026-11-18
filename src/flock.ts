@@ -1,5 +1,3 @@
-// flock(2) through bun:ffi. The kernel drops the lock when the holding process dies, however it dies, which is the
-// crash safety the lock design rests on. Node has no flock binding, so figma-fast runs on Bun.
 import { dlopen, FFIType } from "bun:ffi"
 import { closeSync, openSync } from "node:fs"
 
@@ -18,14 +16,14 @@ export interface LockFile {
   readonly path: string
 }
 
-export const openLockFile = (path: string): LockFile => ({ fd: openSync(path, "a+", 0o600), path })
+export const openLockFile = (path: string) => ({ fd: openSync(path, "a+", 0o600), path })
 
 /** Takes the lock without waiting: true when this file now holds it. */
-export const tryLock = (file: LockFile, mode: "shared" | "exclusive"): boolean =>
+export const tryLock = (file: LockFile, mode: "shared" | "exclusive") =>
   libc.symbols.flock(file.fd, (mode === "shared" ? LOCK_SH : LOCK_EX) | LOCK_NB) === 0
 
 /** Lets the lock go and closes the file. Closing alone would release it too. */
-export const unlockAndClose = (file: LockFile): void => {
+export const unlockAndClose = (file: LockFile) => {
   libc.symbols.flock(file.fd, LOCK_UN)
   closeSync(file.fd)
 }

@@ -1,4 +1,3 @@
-// The transport order: desktop first when its holder answers, ego after it, and a fallback only when nothing ran.
 import { assert, describe, it } from "@effect/vitest"
 import { Context, Duration, Effect, Layer } from "effect"
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs"
@@ -16,7 +15,6 @@ const transportsFor = (settings: ReturnType<typeof testSettings>) =>
     Effect.map((context) => Context.get(context, Transports).map((t) => t.name)),
   )
 
-/** A socket that answers each CDP call with its id, as a healthy holder does. */
 const fakeHolder = (path: string) =>
   Effect.acquireRelease(
     Effect.callback<ReturnType<typeof createServer>>((resume) => {
@@ -102,7 +100,6 @@ describe("transport order and fallback", () => {
       const bin = join(queueDir, "bin")
       mkdirSync(bin)
       const stub = join(bin, "ego-browser")
-      // The stub runs the script it gets with INPUT replaced by a fake page API, and reports what it saw.
       writeFileSync(stub, `#!/bin/sh
 args="$*"
 input=$(cat)

@@ -1,4 +1,3 @@
-// design/tokens.json as Figma takes it: a port of figmacli 0.1.0's CompileTokens (internal/figma/tokens.go).
 import { Schema } from "effect"
 import { BadInput } from "./domain.ts"
 
@@ -57,7 +56,6 @@ export interface TokenPush {
   readonly effects: ReadonlyArray<EffectStyle>
 }
 
-/** The free plan allows one mode in a collection, so each theme is a collection. */
 const themeSets = [
   { id: "dark", collection: "Cursor Dark", mode: "Dark" },
   { id: "light", collection: "Cursor Light", mode: "Light" },
@@ -70,24 +68,21 @@ export const hexColor = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
 const aliasColor = /^\{[a-z0-9-]+\}$/
 const shadowLayer = /^(-?[\d.]+)(?:px)? (-?[\d.]+)(?:px)? (-?[\d.]+)(?:px)?(?: (-?[\d.]+)px)? rgba\((\d+), ?(\d+), ?(\d+), ?([\d.]+)\)$/
 
-const perTheme = (value: string | { readonly [k: string]: string }, theme: string): string =>
+const perTheme = (value: string | { readonly [k: string]: string }, theme: string) =>
   typeof value === "string" ? value : value[theme] ?? ""
 
-/** "12px" only: a share or any other unit is no size for Figma. */
-const pixels = (value: string): number | undefined => {
+const pixels = (value: string) => {
   if (!value.endsWith("px")) return undefined
   const n = Number(value.slice(0, -2))
   return value.length > 2 && Number.isFinite(n) ? n : undefined
 }
 
-/** "16px", or a plain number that is a share of the font size, as in CSS. */
-const lineHeight = (value: string, size: number): number | undefined => {
+const lineHeight = (value: string, size: number) => {
   const share = value.trim() === "" ? Number.NaN : Number(value)
   return Number.isFinite(share) ? share * size : pixels(value)
 }
 
-/** Cuts a CSS shadow list at the commas outside its brackets. */
-const splitShadows = (value: string): Array<string> => {
+const splitShadows = (value: string) => {
   const parts: Array<string> = []
   let depth = 0
   let start = 0
@@ -104,7 +99,7 @@ const splitShadows = (value: string): Array<string> => {
   return parts
 }
 
-const shadowLayers = (value: string): Array<Shadow> | undefined => {
+const shadowLayers = (value: string) => {
   const layers: Array<Shadow> = []
   for (const part of splitShadows(value)) {
     const m = shadowLayer.exec(part.trim())
@@ -116,7 +111,7 @@ const shadowLayers = (value: string): Array<Shadow> | undefined => {
 }
 
 /** Turns design/tokens.json into what Figma takes, and names what it cannot take. */
-export const compileTokens = (text: string): { readonly push: TokenPush; readonly skipped: ReadonlyArray<string> } | BadInput => {
+export const compileTokens = (text: string) => {
   let file: typeof TokenFile.Type
   try {
     file = Schema.decodeUnknownSync(TokenFile)(JSON.parse(text))
@@ -190,7 +185,6 @@ export const compileTokens = (text: string): { readonly push: TokenPush; readonl
       else effects.push({ name: `${theme.collection}/${token.name}`, layers })
     }
   }
-  // Go's sort.Strings sorts by bytes.
   skipped.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
   return { push: { colors, numbers, text: textStyles, effects }, skipped }
 }
